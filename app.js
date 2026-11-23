@@ -27,6 +27,7 @@ const VIEWS = ['board','upcoming','reminders','people','activity','users'];
 
 const ICON = {
   x:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>',
+  chev:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>',
   clip:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 11-8.5 8.5a5 5 0 0 1-7-7L14 4a3.5 3.5 0 0 1 5 5l-8.6 8.5a2 2 0 0 1-2.8-2.8L15.5 7"/></svg>',
   plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
   copy:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>',
@@ -41,7 +42,11 @@ const S = {
   view:'board', filter:{q:'', status:'all', owner:'all'},
   drawerOpen:false, openId:null, draft:null, base:null, baseUpdatedAt:'', dirty:false, saving:false, footMode:'', confirmDoc:null, opener:null,
   upMsgs:[], editingPerson:null, confirmPerson:null, personErr:'', confirmMember:null, memberErr:'', banners:{},
+  openSecs: loadOpenSecs(),
 };
+// Which board sections are expanded: remembered per browser, all collapsed the first time.
+function loadOpenSecs(){ try { const v = JSON.parse(localStorage.getItem('gb-open-sections') || '[]'); return new Set(Array.isArray(v) ? v : []); } catch (_) { return new Set(); } }
+function saveOpenSecs(){ try { localStorage.setItem('gb-open-sections', JSON.stringify([...S.openSecs])); } catch (_) {} }
 
 // ---------- utils ----------
 const $ = (s, r=document) => r.querySelector(s);
@@ -220,7 +225,8 @@ function renderFilters(){
   if (!S.people.some(p => p.id === S.filter.owner) && !['all','none'].includes(S.filter.owner)) S.filter.owner = 'all';
   sel.innerHTML = `<option value="all">Everyone</option><option value="none">Unassigned</option>` + S.people.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
   sel.value = S.filter.owner;
-  $('#jump').innerHTML = SECTIONS.map(s => `<button type="button" data-act="jump" data-sec="${s.key}"><span class="plate sm" aria-hidden="true">${s.n}</span>${esc(s.short)}</button>`).join('');
+  $('#jump').innerHTML = SECTIONS.map(s => `<button type="button" data-act="jump" data-sec="${s.key}"><span class="plate sm" aria-hidden="true">${s.n}</span>${esc(s.short)}</button>`).join('')
+    + `<span class="jump-all"><button type="button" data-act="expand-all">Expand all</button><button type="button" data-act="collapse-all">Collapse all</button></span>`;
 }
 function rowHTML(c){
   const owner = ownerName(c);
@@ -248,15 +254,25 @@ function renderBoard(){
     else if (!all.length) body = `<p class="empty">No checks in this section yet.${ro ? '' : ' Use <b>Add check</b> to create the first one.'}</p>`;
     else if (!shown.length) body = `<p class="empty">No checks here match the current filter.</p>`;
     else body = `<div class="row head" aria-hidden="true"><span>Check</span><span>Status</span><span>Last completed</span><span>Next due</span><span>Responsible</span><span>Docs</span></div>` + shown.map(rowHTML).join('');
-    return `<section class="sec" id="sec-${sec.key}" aria-labelledby="h-${sec.key}">
+    // A filter or search opens every section that has matches, without changing what's remembered.
+    const open = S.openSecs.has(sec.key) || Boolean(filtered && shown.length > 0);
+    const meta = [`${all.length} check${all.length === 1 ? '' : 's'}`];
+    if (filtered && all.length) meta.push(`${shown.length} shown`);
+    if (od) meta.push(`<span class="od">${od} overdue</span>`);
+    if (cnt.red) meta.push(`<span class="od">${cnt.red} red</span>`);
+    if (cnt.amber) meta.push(`${cnt.amber} amber`);
+    return `<section class="sec" id="sec-${sec.key}" data-open="${open}">
       <header class="sec-head">
-        <span class="plate" aria-hidden="true">${sec.n}</span>
-        <div class="sec-titles"><h2 id="h-${sec.key}">${esc(sec.title)}</h2>
-          <div class="sec-meta">${all.length} check${all.length === 1 ? '' : 's'}${filtered && all.length ? ` · ${shown.length} shown` : ''}${od ? ` · <span class="od">${od} overdue</span>` : ''}</div></div>
-        ${all.length ? `<div class="ragbar mini" aria-hidden="true">${segs}</div>` : ''}
+        <button type="button" class="sec-toggle" data-act="toggle-sec" data-sec="${sec.key}" aria-expanded="${open}" aria-controls="rows-${sec.key}">
+          <span class="plate" aria-hidden="true">${sec.n}</span>
+          <span class="sec-titles"><span class="sec-h" id="h-${sec.key}" role="heading" aria-level="2">${esc(sec.title)}</span>
+            <span class="sec-meta">${meta.join(' · ')}</span></span>
+          ${all.length ? `<span class="ragbar mini" aria-hidden="true">${segs}</span>` : ''}
+          <span class="chev" aria-hidden="true">${ICON.chev}</span>
+        </button>
         ${ro ? '' : `<button type="button" class="btn ghost" data-act="add" data-sec="${sec.key}">${ICON.plus}Add check</button>`}
       </header>
-      <div class="rows">${body}</div>
+      <div class="rows" id="rows-${sec.key}"${open ? '' : ' hidden'}>${body}</div>
     </section>`;
   }).join('');
 }
@@ -727,7 +743,10 @@ const ACTS = {
   'doc-remove': t => removeDoc(t.dataset.doc),
   status: t => { S.filter.status = t.dataset.k; renderBoard(); },
   tile: t => { S.filter = {q:'', status:t.dataset.f, owner:'all'}; $('#q').value = ''; if (S.view !== 'board') location.hash = 'board'; else renderBoard(); $('#view-board').scrollIntoView({behavior:'smooth', block:'start'}); },
-  jump: t => { const el = $('#sec-' + t.dataset.sec); if (el) el.scrollIntoView({behavior:'smooth', block:'start'}); },
+  jump: t => { S.openSecs.add(t.dataset.sec); saveOpenSecs(); renderBoard(); const el = $('#sec-' + t.dataset.sec); if (el) el.scrollIntoView({behavior:'smooth', block:'start'}); },
+  'toggle-sec': t => { const k = t.dataset.sec; const isOpen = t.getAttribute('aria-expanded') === 'true'; if (isOpen) S.openSecs.delete(k); else S.openSecs.add(k); saveOpenSecs(); renderBoard(); const b = $(`[data-act="toggle-sec"][data-sec="${k}"]`); if (b) b.focus(); },
+  'expand-all': () => { SECTIONS.forEach(s => S.openSecs.add(s.key)); saveOpenSecs(); renderBoard(); },
+  'collapse-all': () => { S.openSecs.clear(); saveOpenSecs(); renderBoard(); },
   export: () => exportCSV(),
   signout: async () => { await S.sb.auth.signOut(); location.hash = ''; location.reload(); },
   'copy-mail': t => { const g = (S._remGroups || [])[Number(t.dataset.i)]; if (g) copyText(reminderText(g.p, g.now), 'Reminder email'); },

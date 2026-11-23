@@ -30,6 +30,21 @@ img{max-width:100%}
 .role-chip{font-family:var(--f-display); font-size:12px; font-weight:600; letter-spacing:.4px; text-transform:uppercase; padding:3px 9px; border-radius:999px; background:rgb(255 255 255 / .12); border:1px solid rgb(255 255 255 / .25); color:var(--mint)}
 .me .initial{width:30px; height:30px; border-radius:50%; display:grid; place-items:center; background-image:linear-gradient(135deg,#4fa79d,#2f6e68); color:#fff; font:600 13px var(--f-display)}
 
+/* Collapsible sections */
+.sec-toggle{flex:1 1 320px; min-width:0; display:flex; align-items:center; gap:12px; border:0; background:none; padding:0; margin:0; color:inherit; font:inherit; text-align:left; cursor:pointer; border-radius:12px}
+.sec-toggle .sec-titles{flex:1 1 auto; min-width:0; display:flex; flex-direction:column}
+.sec-h{font-family:var(--f-display); font-weight:600; font-size:19px; letter-spacing:-.3px; line-height:1.2; text-wrap:balance}
+.sec-toggle:hover .sec-h{color:var(--accent)}
+.sec-meta{display:block}
+.chev{flex:none; width:32px; height:32px; display:grid; place-items:center; border-radius:10px; color:var(--muted); background:var(--surface-2)}
+.chev svg{width:18px; height:18px; transition:transform .2s ease}
+.sec[data-open="true"] .chev svg{transform:rotate(180deg)}
+.sec-toggle:hover .chev{color:var(--accent)}
+.sec[data-open="false"] .sec-head{border-bottom:0}
+.jump-all{margin-left:auto; display:inline-flex; gap:4px}
+.jump-all button{color:var(--accent)}
+@media (prefers-reduced-motion: reduce){ .chev svg{transition:none} }
+
 /* Users tab */
 .ulist select{padding:6px 10px; border-radius:10px}
 .ulist .you{font-size:12px; color:var(--muted)}
