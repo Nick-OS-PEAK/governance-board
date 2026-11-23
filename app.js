@@ -169,6 +169,7 @@ async function loadAll(){
     if (newRole !== S.role) { S.role = newRole; applyRole(); }
     S.loading = false; banner('conn', null);
     onData();
+    maybeShowAlert();
   } catch (e) {
     S.loading = false;
     banner('conn', 'The register could not be loaded: ' + ((e && e.message) || 'unknown error') + '. Check your connection and reload.', 'warn');
@@ -205,6 +206,41 @@ function renderSummary(){
   }).join('') : `<li class="hint" style="padding:8px 2px">${S.loading ? 'Loading…' : total ? 'Nothing overdue, red or due in the next 30 days.' : 'Checks that are overdue, red or due soon will be listed here.'}</li>`;
   const remDue = cs.filter(c => { const r = reminderState(c); return r && (r.kind === 'overdue' || r.kind === 'due'); }).length;
   const b = $('#rem-badge'); b.hidden = !remDue; b.textContent = remDue;
+}
+
+// ---------- first-landing pop-up: overdue and due soon ----------
+// Shown once per browser session (and at most once a day per session) after the board first loads.
+function maybeShowAlert(){
+  if (S.alertChecked) return; S.alertChecked = true;
+  let seen = null; try { seen = sessionStorage.getItem('gb-alert-seen'); } catch (_) {}
+  if (seen === today()) return;
+  const byDue = (a, b) => a.nextDue.localeCompare(b.nextDue);
+  const od = S.checks.filter(c => dueState(c) === 'overdue').sort(byDue);
+  const soon = S.checks.filter(c => dueState(c) === 'soon').sort(byDue);
+  if (!od.length && !soon.length) return;
+  try { sessionStorage.setItem('gb-alert-seen', today()); } catch (_) {}
+  const MAX = 8;
+  const item = c => { const owner = ownerName(c); return `<li><button type="button" class="alert-item" data-act="alert-open" data-id="${esc(c.id)}">
+      <span class="dot s-${c.status}"></span>
+      <span class="ai-main"><span class="t">${esc(c.title)}</span><span class="sub">${SEC[c.section].n} · ${esc(SEC[c.section].short)} · ${owner ? esc(owner) : 'Unassigned'}</span></span>
+      <span class="ai-due"><span class="mono">${fmt(c.nextDue)}</span><span class="due-rel ${dueClass(c)}">${rel(c.nextDue)}</span></span></button></li>`; };
+  const group = (list, label, cls, f) => !list.length ? '' : `<div class="alert-group"><h3 class="${cls}">${label} · ${list.length}</h3><ul>${list.slice(0, MAX).map(item).join('')}</ul>${list.length > MAX ? `<button type="button" class="linkish more" data-act="alert-show" data-f="${f}">Show all ${list.length} on the board</button>` : ''}</div>`;
+  const summary = [od.length ? `${od.length} overdue` : '', soon.length ? `${soon.length} due in the next ${SOON} days` : ''].filter(Boolean).join(' and ');
+  $('#alert').innerHTML = `
+    <div class="alert-head"><span class="alert-icon${od.length ? '' : ' soon'}" aria-hidden="true">${ICON.warn}</span>
+      <div><h2 id="alert-title">${od.length ? 'Overdue checks need attention' : 'Checks coming due'}</h2><p>${summary}. Open a check to update it.</p></div>
+      <button type="button" class="icon-btn" data-act="alert-close" aria-label="Close">${ICON.x}</button></div>
+    <div class="alert-body">${group(od, 'Overdue', 'od', 'overdue')}${group(soon, `Due in the next ${SOON} days`, 'soon', 'soon')}</div>
+    <div class="alert-foot"><button type="button" class="btn" data-act="alert-close">Dismiss</button><button type="button" class="btn primary" data-act="alert-show" data-f="${od.length ? 'overdue' : 'soon'}">Show ${od.length ? 'overdue' : 'due soon'} on the board</button></div>`;
+  S.alertOpener = document.activeElement;
+  $('#alert-scrim').hidden = false; $('#alert').hidden = false;
+  document.body.classList.add('locked');
+  const f = $('#alert .alert-foot .btn.primary'); if (f) f.focus();
+}
+function closeAlert(){
+  $('#alert').hidden = true; $('#alert-scrim').hidden = true;
+  if (!S.drawerOpen) document.body.classList.remove('locked');
+  if (S.alertOpener && document.contains(S.alertOpener)) S.alertOpener.focus();
 }
 
 // ---------- render: board ----------
@@ -751,6 +787,9 @@ const ACTS = {
   signout: async () => { await S.sb.auth.signOut(); location.hash = ''; location.reload(); },
   'copy-mail': t => { const g = (S._remGroups || [])[Number(t.dataset.i)]; if (g) copyText(reminderText(g.p, g.now), 'Reminder email'); },
   'copybox-close': () => { $('#copybox').hidden = true; },
+  'alert-close': () => closeAlert(),
+  'alert-open': t => { closeAlert(); openDrawer(t.dataset.id); },
+  'alert-show': t => { closeAlert(); S.filter = {q:'', status:t.dataset.f, owner:'all'}; $('#q').value = ''; if (S.view !== 'board') location.hash = 'board'; else renderBoard(); $('#view-board').scrollIntoView({behavior:'smooth', block:'start'}); },
   'person-edit': t => { S.editingPerson = t.dataset.id; S.personErr = ''; renderPeople(); const n = $('#p-name'); if (n) n.focus(); },
   'person-cancel': () => { S.editingPerson = null; S.personErr = ''; renderPeople(); },
   'person-ask': t => { S.confirmPerson = t.dataset.id; renderPeople(); },
@@ -780,7 +819,7 @@ function bindAppEvents(){
   document.addEventListener('dragleave', e => { const d = e.target.closest && e.target.closest('#drop'); if (d) d.classList.remove('over'); });
   document.addEventListener('drop', e => { const d = e.target.closest && e.target.closest('#drop'); if (d) { e.preventDefault(); d.classList.remove('over'); uploadFiles(Array.from(e.dataTransfer.files || [])); } });
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') { if (!$('#copybox').hidden) { $('#copybox').hidden = true; return; } if (S.drawerOpen) closeDrawer(false); }
+    if (e.key === 'Escape') { if (!$('#alert').hidden) { closeAlert(); return; } if (!$('#copybox').hidden) { $('#copybox').hidden = true; return; } if (S.drawerOpen) closeDrawer(false); }
   });
   window.addEventListener('hashchange', route);
 }
