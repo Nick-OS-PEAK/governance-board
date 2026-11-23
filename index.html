@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Directors' Governance Board</title>
+<meta name="robots" content="noindex,nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Red+Hat+Display:wght@300;400;500;600;700&display=swap">
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="auth.css">
+</head>
+<body>
+
+<!-- Sign-in -->
+<div class="auth" id="auth" hidden>
+  <form class="auth-card" id="auth-form" novalidate>
+    <div class="auth-brand">
+      <svg viewBox="0 0 46 46" aria-hidden="true"><defs><linearGradient id="mk2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4fa79d"/><stop offset="1" stop-color="#2f6e68"/></linearGradient></defs><rect width="46" height="46" rx="13" fill="url(#mk2)"/><rect x="1" y="1" width="44" height="44" rx="12" fill="none" stroke="#fff" stroke-opacity=".35"/><circle cx="14" cy="23" r="4.2" fill="#ff8a8a"/><circle cx="23" cy="23" r="4.2" fill="#ffd27a"/><circle cx="32" cy="23" r="4.2" fill="#fff"/></svg>
+      GOVERNANCE
+    </div>
+    <div>
+      <h1 id="auth-title">Sign in</h1>
+      <p class="sub" id="auth-sub">Enter your work email and we'll send you a sign-in link. No password needed.</p>
+    </div>
+    <div id="auth-fields">
+      <label for="auth-email">Work email</label>
+      <input type="email" id="auth-email" autocomplete="email" placeholder="you@company.co.uk" required>
+    </div>
+    <p class="msg" id="auth-msg" hidden></p>
+    <button class="go" type="submit" id="auth-go">Email me a sign-in link</button>
+    <button class="ghost" type="button" id="auth-alt" hidden>Use a different email</button>
+    <p class="foot">Access is by invitation. Ask a director if you need it.</p>
+  </form>
+</div>
+
+<!-- Setup needed -->
+<div class="auth" id="setup" hidden>
+  <div class="auth-card">
+    <h1>Almost ready</h1>
+    <p class="sub">This copy of the board isn't connected to its database yet. Add the Supabase project URL and anon key to <b>config.js</b>, then reload. SETUP.md has the steps.</p>
+  </div>
+</div>
+
+<!-- App -->
+<div id="app-root" hidden>
+<div class="hero"><div class="wrap">
+  <header class="top">
+    <svg class="mark" viewBox="0 0 46 46" aria-hidden="true">
+      <defs><linearGradient id="mk" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4fa79d"/><stop offset="1" stop-color="#2f6e68"/></linearGradient></defs>
+      <rect width="46" height="46" rx="13" fill="url(#mk)"/>
+      <rect x="1" y="1" width="44" height="44" rx="12" fill="none" stroke="#ffffff" stroke-opacity=".35"/>
+      <circle cx="14" cy="23" r="4.2" fill="#ff8a8a"/>
+      <circle cx="23" cy="23" r="4.2" fill="#ffd27a"/>
+      <circle cx="32" cy="23" r="4.2" fill="#ffffff"/>
+    </svg>
+    <div class="brand">
+      <div class="kicker">GOVERNANCE</div>
+      <h1>Directors' Governance Board</h1>
+      <p>Statutory, safety, people and insurance checks for the business, in one shared register.</p>
+    </div>
+    <div class="top-right">
+      <span class="today mono" id="today"></span>
+      <span class="me" id="me"></span>
+      <button class="btn" type="button" data-act="export"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>Export CSV</button>
+      <button class="btn" type="button" data-act="signout">Sign out</button>
+    </div>
+  </header>
+
+  <div class="banners" id="banners"></div>
+
+  <section class="summary" aria-label="Summary">
+    <div class="panel health">
+      <div class="tiles" id="tiles"></div>
+      <div class="ragline" id="ragline"></div>
+    </div>
+    <div class="panel attention">
+      <h2>Needs attention</h2>
+      <ul class="att-list" id="attention"></ul>
+    </div>
+  </section>
+</div></div>
+
+<div class="app wrap">
+  <nav class="tabs" aria-label="Views">
+    <a class="tab" href="#board" data-view="board">Board</a>
+    <a class="tab" href="#upcoming" data-view="upcoming">Upcoming</a>
+    <a class="tab" href="#reminders" data-view="reminders">Reminders<span class="badge" id="rem-badge" hidden></span></a>
+    <a class="tab" href="#people" data-view="people">People</a>
+    <a class="tab" href="#activity" data-view="activity">Activity</a>
+    <a class="tab" href="#users" data-view="users" id="users-tab" hidden>Users</a>
+  </nav>
+
+  <main>
+    <section class="view" data-view="board" id="view-board">
+      <div class="filters">
+        <label class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input type="search" id="q" placeholder="Search checks and comments" aria-label="Search checks"></label>
+        <div class="chips" id="status-chips" role="group" aria-label="Filter by status"></div>
+        <select id="owner-filter" aria-label="Filter by responsible person"></select>
+      </div>
+      <div class="jump" id="jump" aria-label="Jump to section"></div>
+      <div class="sections" id="sections"></div>
+    </section>
+    <section class="view" data-view="upcoming" id="view-upcoming" hidden></section>
+    <section class="view" data-view="reminders" id="view-reminders" hidden></section>
+    <section class="view" data-view="people" id="view-people" hidden></section>
+    <section class="view" data-view="activity" id="view-activity" hidden></section>
+    <section class="view" data-view="users" id="view-users" hidden></section>
+  </main>
+</div>
+</div>
+
+<div class="scrim" id="scrim" hidden data-act="close"></div>
+<aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="dr-title" hidden></aside>
+<div class="toast" id="toast" role="status" hidden></div>
+<div class="copybox" id="copybox" hidden>
+  <strong>Copy this text</strong>
+  <span class="hint">Copying didn't work. The text is selected: press Ctrl+C (or ⌘C), then paste it into an email.</span>
+  <textarea id="copytext" readonly aria-label="Text to copy"></textarea>
+  <div><button class="btn" type="button" data-act="copybox-close">Done</button></div>
+</div>
+
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
