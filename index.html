@@ -26,10 +26,15 @@
     </div>
     <div id="auth-fields">
       <label for="auth-email">Work email</label>
-      <input type="email" id="auth-email" autocomplete="email" placeholder="you@company.co.uk" required>
+      <input type="email" id="auth-email" name="email" autocomplete="username" placeholder="you@company.co.uk" required>
+    </div>
+    <div id="auth-pw-field" hidden>
+      <label for="auth-password">Password</label>
+      <input type="password" id="auth-password" name="password" autocomplete="current-password" placeholder="Your password">
     </div>
     <p class="msg" id="auth-msg" hidden></p>
     <button class="go" type="submit" id="auth-go">Email me a sign-in link</button>
+    <button class="ghost" type="button" id="auth-mode">Sign in with a password instead</button>
     <button class="ghost" type="button" id="auth-alt" hidden>Use a different email</button>
     <p class="foot">Access is by invitation. Ask a director if you need it.</p>
   </form>
@@ -64,6 +69,7 @@
       <span class="today mono" id="today"></span>
       <span class="me" id="me"></span>
       <button class="btn" type="button" data-act="export"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>Export CSV</button>
+      <button class="btn" type="button" data-act="pw-open" id="pw-btn">Set password</button>
       <button class="btn" type="button" data-act="signout">Sign out</button>
     </div>
   </header>
@@ -115,6 +121,23 @@
 <aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="dr-title" hidden></aside>
 <div class="alert-scrim" id="alert-scrim" hidden data-act="alert-close"></div>
 <div class="alert-modal" id="alert" role="dialog" aria-modal="true" aria-labelledby="alert-title" hidden></div>
+<div class="alert-scrim" id="pw-scrim" hidden data-act="pw-close"></div>
+<div class="alert-modal pw-modal" id="pw-modal" role="dialog" aria-modal="true" aria-labelledby="pw-title" hidden>
+  <form id="pw-form" novalidate>
+    <div class="alert-head">
+      <div><h2 id="pw-title">Set a password</h2><p>Then you can sign in on any device with your email and password, without waiting for an email. Sign-in links still work too.</p></div>
+      <button type="button" class="icon-btn" data-act="pw-close" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>
+    <div class="alert-body pw-body">
+      <input type="email" id="pw-username" name="username" autocomplete="username" hidden>
+      <div class="field"><label for="pw-new">New password</label><input type="password" id="pw-new" name="new-password" autocomplete="new-password" minlength="8" required></div>
+      <div class="field"><label for="pw-confirm">Type it again</label><input type="password" id="pw-confirm" name="confirm-password" autocomplete="new-password" minlength="8" required></div>
+      <p class="hint">At least 8 characters. A password manager can create and remember one for you.</p>
+      <p class="err-text" id="pw-err" hidden></p>
+    </div>
+    <div class="alert-foot"><button type="button" class="btn" data-act="pw-close">Cancel</button><button type="submit" class="btn primary" id="pw-save">Save password</button></div>
+  </form>
+</div>
 <div class="toast" id="toast" role="status" hidden></div>
 <div class="copybox" id="copybox" hidden>
   <strong>Copy this text</strong>

@@ -788,6 +788,8 @@ const ACTS = {
   'copy-mail': t => { const g = (S._remGroups || [])[Number(t.dataset.i)]; if (g) copyText(reminderText(g.p, g.now), 'Reminder email'); },
   'copybox-close': () => { $('#copybox').hidden = true; },
   'alert-close': () => closeAlert(),
+  'pw-open': () => openPw(),
+  'pw-close': () => closePw(),
   'alert-open': t => { closeAlert(); openDrawer(t.dataset.id); },
   'alert-show': t => { closeAlert(); S.filter = {q:'', status:t.dataset.f, owner:'all'}; $('#q').value = ''; if (S.view !== 'board') location.hash = 'board'; else renderBoard(); $('#view-board').scrollIntoView({behavior:'smooth', block:'start'}); },
   'person-edit': t => { S.editingPerson = t.dataset.id; S.personErr = ''; renderPeople(); const n = $('#p-name'); if (n) n.focus(); },
@@ -819,7 +821,7 @@ function bindAppEvents(){
   document.addEventListener('dragleave', e => { const d = e.target.closest && e.target.closest('#drop'); if (d) d.classList.remove('over'); });
   document.addEventListener('drop', e => { const d = e.target.closest && e.target.closest('#drop'); if (d) { e.preventDefault(); d.classList.remove('over'); uploadFiles(Array.from(e.dataTransfer.files || [])); } });
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') { if (!$('#alert').hidden) { closeAlert(); return; } if (!$('#copybox').hidden) { $('#copybox').hidden = true; return; } if (S.drawerOpen) closeDrawer(false); }
+    if (e.key === 'Escape') { if (!$('#pw-modal').hidden) { closePw(); return; } if (!$('#alert').hidden) { closeAlert(); return; } if (!$('#copybox').hidden) { $('#copybox').hidden = true; return; } if (S.drawerOpen) closeDrawer(false); }
   });
   window.addEventListener('hashchange', route);
 }
@@ -850,12 +852,21 @@ function showScreen(which){
   $('#auth').hidden = which !== 'auth'; $('#setup').hidden = which !== 'setup'; $('#app-root').hidden = which !== 'app';
 }
 function authMsg(text, err){ const m = $('#auth-msg'); m.textContent = text; m.className = 'msg' + (err ? ' err' : ''); m.hidden = !text; }
+// Two ways in: an emailed link (default, works for everyone) or email + password (once someone has set one).
+let authMode = (() => { try { return localStorage.getItem('gb-auth-mode') === 'password' ? 'password' : 'link'; } catch (_) { return 'link'; } })();
+function setAuthMode(mode){
+  authMode = mode; try { localStorage.setItem('gb-auth-mode', mode); } catch (_) {}
+  const pw = mode === 'password';
+  $('#auth-sub').textContent = pw ? 'Sign in with your work email and the password you set on the board.' : "Enter your work email and we'll send you a sign-in link. No password needed.";
+  $('#auth-pw-field').hidden = !pw;
+  $('#auth-go').textContent = pw ? 'Sign in' : 'Email me a sign-in link';
+  $('#auth-mode').textContent = pw ? 'Forgotten it, or not set one? Email me a link' : 'Sign in with a password instead';
+}
 function showSignIn(){
   showScreen('auth');
   $('#auth-title').textContent = 'Sign in';
-  $('#auth-sub').textContent = "Enter your work email and we'll send you a sign-in link. No password needed.";
-  $('#auth-fields').hidden = false; $('#auth-go').hidden = false; $('#auth-alt').hidden = true; $('#auth-go').disabled = false;
-  $('#auth-go').textContent = 'Email me a sign-in link';
+  $('#auth-fields').hidden = false; $('#auth-go').hidden = false; $('#auth-mode').hidden = false; $('#auth-alt').hidden = true; $('#auth-go').disabled = false;
+  setAuthMode(authMode);
   const err = new URLSearchParams(location.hash.slice(1)).get('error_description');
   authMsg(err ? `That sign-in link didn't work (${err}). Request a new one.` : '', !!err);
 }
@@ -864,29 +875,78 @@ function showNoAccess(){
   $('#auth-title').textContent = 'No access yet';
   $('#auth-sub').textContent = '';
   authMsg(`You're signed in as ${S.email}, but this email isn't on the board's access list. Ask a director to add you on the Users tab, then sign in again.`, true);
-  $('#auth-fields').hidden = true; $('#auth-go').hidden = true;
+  $('#auth-fields').hidden = true; $('#auth-pw-field').hidden = true; $('#auth-go').hidden = true; $('#auth-mode').hidden = true;
   const alt = $('#auth-alt'); alt.hidden = false; alt.textContent = 'Sign out';
   alt.onclick = async () => { await S.sb.auth.signOut(); location.reload(); };
 }
 function bindAuth(){
+  $('#auth-mode').addEventListener('click', () => { authMsg(''); setAuthMode(authMode === 'password' ? 'link' : 'password'); ($('#auth-email').value ? (authMode === 'password' ? $('#auth-password') : $('#auth-go')) : $('#auth-email')).focus(); });
   $('#auth-form').addEventListener('submit', async e => {
     e.preventDefault();
     const email = $('#auth-email').value.trim().toLowerCase();
     if (!EMAIL_RE.test(email)) { authMsg('Enter a valid email address.', true); return; }
-    const go = $('#auth-go'); go.disabled = true; go.textContent = 'Sending…';
+    const go = $('#auth-go');
+    if (authMode === 'password') {
+      const password = $('#auth-password').value;
+      if (!password) { authMsg('Enter your password.', true); return; }
+      go.disabled = true; go.textContent = 'Signing in…';
+      const {error} = await S.sb.auth.signInWithPassword({email, password});
+      go.disabled = false; go.textContent = 'Sign in';
+      if (error) {
+        if (/invalid login credentials/i.test(error.message)) authMsg("That email and password don't match. If you haven't set a password yet, use \"Email me a link\" below, then set one from the board.", true);
+        else if (/rate limit|too many/i.test(error.message)) authMsg('Too many attempts. Wait a few minutes and try again.', true);
+        else authMsg(`Could not sign in: ${error.message}`, true);
+        return;
+      }
+      $('#auth-password').value = '';
+      return; // the sign-in listener opens the board
+    }
+    go.disabled = true; go.textContent = 'Sending…';
     const {error} = await S.sb.auth.signInWithOtp({email, options:{emailRedirectTo: location.origin + location.pathname, shouldCreateUser: true}});
     go.disabled = false; go.textContent = 'Email me a sign-in link';
     if (error) { authMsg(/rate limit/i.test(error.message) ? 'Too many sign-in emails were requested. Wait a few minutes and try again.' : `Could not send the link: ${error.message}`, true); return; }
     $('#auth-title').textContent = 'Check your email';
     $('#auth-sub').textContent = '';
     authMsg(`We've sent a sign-in link to ${email}. Open it on this device to continue. It expires in one hour.`);
-    $('#auth-fields').hidden = true; go.hidden = true;
+    $('#auth-fields').hidden = true; go.hidden = true; $('#auth-mode').hidden = true;
     const alt = $('#auth-alt'); alt.hidden = false; alt.textContent = 'Use a different email'; alt.onclick = showSignIn;
+  });
+}
+
+// ---------- set / change password (on the board) ----------
+function openPw(){
+  S.pwOpener = document.activeElement;
+  $('#pw-form').reset(); $('#pw-username').value = S.email; $('#pw-err').hidden = true;
+  $('#pw-scrim').hidden = false; $('#pw-modal').hidden = false; document.body.classList.add('locked');
+  $('#pw-new').focus();
+}
+function closePw(){
+  $('#pw-modal').hidden = true; $('#pw-scrim').hidden = true;
+  if (!S.drawerOpen) document.body.classList.remove('locked');
+  if (S.pwOpener && document.contains(S.pwOpener)) S.pwOpener.focus();
+}
+function bindPw(){
+  $('#pw-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const a = $('#pw-new').value, b = $('#pw-confirm').value, err = $('#pw-err');
+    const show = m => { err.textContent = m; err.hidden = false; };
+    if (a.length < 8) return show('Use at least 8 characters.');
+    if (a !== b) return show("The two passwords don't match.");
+    const btn = $('#pw-save'); btn.disabled = true; btn.textContent = 'Saving…';
+    const {error} = await S.sb.auth.updateUser({password: a});
+    btn.disabled = false; btn.textContent = 'Save password';
+    if (error) {
+      if (/different from the old/i.test(error.message)) return show('That is already your password. Choose a different one.');
+      if (/reauthenticat/i.test(error.message)) return show('For security, sign out, sign back in with an emailed link, then set your password straight away.');
+      return show(`Could not save the password: ${error.message}`);
+    }
+    try { localStorage.setItem('gb-auth-mode', 'password'); } catch (_) {}
+    closePw(); toast('Password saved. You can now sign in with it on any device.');
   });
 }
 async function startApp(session){
   S.session = session; S.email = String(session.user.email || '').toLowerCase();
-  if (!S.started) { S.started = true; bindAppEvents(); subscribe(); }
+  if (!S.started) { S.started = true; bindAppEvents(); bindPw(); subscribe(); }
   showScreen('app');
   if (/access_token|error_description/.test(location.hash)) history.replaceState(null, '', location.pathname + location.search);
   const t = new Date(); $('#today').textContent = `${DAYS_L[t.getDay()]} ${t.getDate()} ${MONTHS_L[t.getMonth()]} ${t.getFullYear()}`;
