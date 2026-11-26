@@ -6,7 +6,7 @@ const SECTIONS = [
   {key:'safety',      n:2, title:'Health, Safety & Workshop Compliance',      short:'Health & Safety'},
   {key:'people',      n:3, title:'People & Employment Compliance',            short:'People & Employment'},
   {key:'environment', n:4, title:'Environmental & Data Protection',           short:'Environment & Data'},
-  {key:'insurance',   n:5, title:'Insurance, Products & Customer Assurance',  short:'Insurance & Customer'},
+  {key:'insurance',   n:5, title:'Insurance & Products',                     short:'Insurance & Products'},
   {key:'management',  n:6, title:'Management & Shareholder Oversight',        short:'Management'},
 ];
 const SEC = Object.fromEntries(SECTIONS.map(s => [s.key, s]));
