@@ -92,7 +92,10 @@ const fmtSize = b => b >= MB ? (b/MB).toFixed(1)+' MB' : Math.max(1, Math.round(
 const pill = s => `<span class="pill s-${s}"><i></i>${STATUS[s]}</span>`;
 const byId = id => S.checks.find(c => c.id === id) || null;
 const personById = id => (id && S.people.find(p => p.id === id)) || null;
-const ownerName = c => { const p = personById(c.ownerId); return p ? p.name : ''; };
+// A check can have up to two responsible people.
+const ownersOf = c => [c.ownerId, c.owner2Id].filter((id, i, a) => id && a.indexOf(id) === i).map(personById).filter(Boolean);
+const ownerName = c => ownersOf(c).map(p => p.name).join(' & ');
+const hasOwner = (c, id) => c.ownerId === id || c.owner2Id === id;
 const readOnly = () => !(S.role === 'admin' || S.role === 'editor');
 const isAdmin = () => S.role === 'admin';
 const sortChecks = list => list.slice().sort((a,b) => (a.order - b.order) || a.title.localeCompare(b.title));
@@ -113,17 +116,17 @@ function normCheck(r, docsBy){
     id: r.id, section: SEC[r.section] ? r.section : 'management',
     title: str(r.title) || 'Untitled check', detail: str(r.detail), status: STATUS[r.status] ? r.status : 'none',
     lastCompleted: str(r.last_completed), nextDue: str(r.next_due), frequency: FREQ[r.frequency] ? r.frequency : '12m',
-    ownerId: str(r.owner_id), remindDays: Number.isFinite(rd) ? rd : 30, comment: str(r.comment),
+    ownerId: str(r.owner_id), owner2Id: str(r.owner2_id), remindDays: Number.isFinite(rd) ? rd : 30, comment: str(r.comment),
     docs: docsBy[r.id] || [], order: Number(r.sort_order) || 0,
     updatedAt: str(r.updated_at), updatedBy: str(r.updated_by), lastReminderSent: str(r.last_reminder_sent),
   };
 }
-const toRow = d => ({
+const toRow = d => Object.assign({
   section: d.section, title: d.title, detail: d.detail, status: d.status,
   last_completed: d.lastCompleted || null, next_due: d.nextDue || null, frequency: d.frequency,
   owner_id: d.ownerId || null, remind_days: d.remindDays, comment: d.comment,
-});
-const ROW_KEY = {section:'section', title:'title', detail:'detail', status:'status', lastCompleted:'last_completed', nextDue:'next_due', frequency:'frequency', ownerId:'owner_id', remindDays:'remind_days', comment:'comment'};
+}, S.hasOwner2 ? {owner2_id: d.owner2Id || null} : {}); // owner2_id exists once 002-second-responsible-person.sql has been run
+const ROW_KEY = {section:'section', title:'title', detail:'detail', status:'status', lastCompleted:'last_completed', nextDue:'next_due', frequency:'frequency', ownerId:'owner_id', owner2Id:'owner2_id', remindDays:'remind_days', comment:'comment'};
 
 // ---------- feedback ----------
 let toastT;
@@ -158,6 +161,7 @@ async function loadAll(){
     ]);
     const docsBy = {};
     docs.forEach(d => (docsBy[d.check_id] = docsBy[d.check_id] || []).push({id:d.id, name:str(d.name) || 'document', size:Number(d.size) || 0, type:str(d.mime), path:str(d.path), at:str(d.uploaded_at), by:str(d.uploaded_by)}));
+    if (checks.length) S.hasOwner2 = Object.prototype.hasOwnProperty.call(checks[0], 'owner2_id');
     S.checks = checks.map(r => normCheck(r, docsBy));
     S.people = people.map(p => ({id:p.id, name:str(p.name) || 'Unnamed', email:str(p.email), role:str(p.role_title)})).sort((a,b) => a.name.localeCompare(b.name));
     S.activity = activity.map(a => ({id:a.id, checkId:str(a.check_id), checkTitle:str(a.check_title), section:str(a.section), action:str(a.action), detail:str(a.detail), by:str(a.by_email), at:str(a.at)}));
@@ -249,8 +253,8 @@ function matches(c){
   if (f.status === 'overdue' && dueState(c) !== 'overdue') return false;
   if (f.status === 'soon' && dueState(c) !== 'soon') return false;
   if (STATUS[f.status] && c.status !== f.status) return false;
-  if (f.owner === 'none' && personById(c.ownerId)) return false;
-  if (f.owner !== 'all' && f.owner !== 'none' && c.ownerId !== f.owner) return false;
+  if (f.owner === 'none' && ownersOf(c).length) return false;
+  if (f.owner !== 'all' && f.owner !== 'none' && !hasOwner(c, f.owner)) return false;
   if (qq && !(c.title + ' ' + c.detail + ' ' + c.comment + ' ' + ownerName(c)).toLowerCase().includes(qq)) return false;
   return true;
 }
@@ -354,9 +358,12 @@ function remGroups(){
   const map = new Map();
   S.checks.forEach(c => {
     const r = reminderState(c); if (!r || r.kind === 'off') return;
-    const p = personById(c.ownerId); const k = p ? p.id : '';
-    if (!map.has(k)) map.set(k, {p, now:[], later:[]});
-    (r.kind === 'sched' ? map.get(k).later : map.get(k).now).push({c, r});
+    const owners = ownersOf(c); // each responsible person gets the check in their own list
+    (owners.length ? owners : [null]).forEach(p => {
+      const k = p ? p.id : '';
+      if (!map.has(k)) map.set(k, {p, now:[], later:[]});
+      (r.kind === 'sched' ? map.get(k).later : map.get(k).now).push({c, r});
+    });
   });
   map.forEach(g => { g.now.sort((a,b) => a.c.nextDue.localeCompare(b.c.nextDue)); g.later.sort((a,b) => a.r.sendOn.localeCompare(b.r.sendOn)); });
   return [...map.values()].sort((a,b) => (!a.p) - (!b.p) || b.now.length - a.now.length || (a.p ? a.p.name : '').localeCompare(b.p ? b.p.name : ''));
@@ -389,7 +396,7 @@ function renderPeople(){
   const ro = readOnly();
   const ed = S.editingPerson ? S.people.find(p => p.id === S.editingPerson) : null;
   if (S.editingPerson && !ed) S.editingPerson = null;
-  const count = id => S.checks.filter(c => c.ownerId === id).length;
+  const count = id => S.checks.filter(c => hasOwner(c, id)).length;
   let h = `<div class="view-intro"><div><h2>People</h2><p>Directors and staff who can be made responsible for a check. Reminder emails go to the address shown here. This list is separate from who can sign in, which admins manage on the Users tab.</p></div></div><div class="people-wrap">`;
   if (!ro) h += `<form class="panel pform" id="pform" novalidate>
       <h3>${ed ? 'Edit person' : 'Add a person'}</h3>
@@ -467,8 +474,8 @@ function route(){
 }
 
 // ---------- drawer ----------
-function blankDraft(section){ return {section, title:'', detail:'', status:'none', lastCompleted:'', nextDue:'', frequency:'12m', ownerId:'', remindDays:30, comment:''}; }
-const FIELDS = ['section','title','detail','status','lastCompleted','nextDue','frequency','ownerId','remindDays','comment'];
+function blankDraft(section){ return {section, title:'', detail:'', status:'none', lastCompleted:'', nextDue:'', frequency:'12m', ownerId:'', owner2Id:'', remindDays:30, comment:''}; }
+const FIELDS = ['section','title','detail','status','lastCompleted','nextDue','frequency','ownerId','owner2Id','remindDays','comment'];
 function openDrawer(id, section, opener){
   S.opener = opener || document.activeElement;
   const c = id ? byId(id) : null;
@@ -496,6 +503,9 @@ function readForm(){
   const st = $('input[name="f-status"]:checked'); d.status = st ? st.value : d.status;
   d.lastCompleted = $('#f-last').value; d.nextDue = $('#f-next').value; d.frequency = $('#f-freq').value;
   d.ownerId = $('#f-owner').value; d.remindDays = Number($('#f-remind').value); d.comment = $('#f-comment').value;
+  if ($('#f-owner2')) d.owner2Id = $('#f-owner2').value;
+  if (d.owner2Id && d.owner2Id === d.ownerId) d.owner2Id = '';
+  if (!d.ownerId && d.owner2Id) { d.ownerId = d.owner2Id; d.owner2Id = ''; }
 }
 function docsHTML(){
   const c = S.openId ? byId(S.openId) : null; const docs = c ? c.docs : [];
@@ -544,7 +554,10 @@ function renderDrawer(){
   const dr = $('#drawer');
   if (!S.drawerOpen) return;
   const d = S.draft, sec = SEC[d.section], ro = readOnly(), dis = ro ? ' disabled' : '';
-  const ownerKnown = !d.ownerId || S.people.some(p => p.id === d.ownerId);
+  const ownerSelect = (id, val, emptyLabel) => {
+    const known = !val || S.people.some(p => p.id === val);
+    return `<select id="${id}"${dis}><option value="">${emptyLabel}</option>${S.people.map(p => `<option value="${esc(p.id)}"${val === p.id ? ' selected' : ''}>${esc(p.name)}${p.role ? ' · ' + esc(p.role) : ''}</option>`).join('')}${known ? '' : `<option value="${esc(val)}" selected>Removed person</option>`}</select>`;
+  };
   dr.innerHTML = `
   <div class="dr-head"><span class="plate" aria-hidden="true">${sec.n}</span>
     <div class="dr-titles"><div class="eyebrow">${esc(sec.title)}</div><h2 id="dr-title">${S.openId ? esc(d.title || 'Untitled check') : 'New check'}</h2></div>
@@ -560,8 +573,14 @@ function renderDrawer(){
       <div class="field"><label for="f-next">Next due</label><input type="date" id="f-next" value="${esc(d.nextDue)}"${dis}><p class="hint" id="f-next-hint">${esc(nextHint())}</p></div>
       <div class="field"><label for="f-remind">Email reminder</label><select id="f-remind"${dis}>${REMIND.map(n => `<option value="${n}"${d.remindDays === n ? ' selected' : ''}>${n ? n + ' days before due' : 'No reminder'}</option>`).join('')}${REMIND.includes(d.remindDays) ? '' : `<option value="${d.remindDays}" selected>${d.remindDays} days before due</option>`}</select></div>
     </div>
-    <div class="field"><label for="f-owner">Responsible person</label><select id="f-owner"${dis}><option value="">Unassigned</option>${S.people.map(p => `<option value="${esc(p.id)}"${d.ownerId === p.id ? ' selected' : ''}>${esc(p.name)}${p.role ? ' · ' + esc(p.role) : ''}</option>`).join('')}${ownerKnown ? '' : `<option value="${esc(d.ownerId)}" selected>Removed person</option>`}</select>
-      <p class="hint">${S.people.length ? 'Reminder emails go to this person.' : 'Add people on the People tab, then assign them here.'}</p></div>
+    ${S.hasOwner2
+      ? `<div class="grid2">
+          <div class="field"><label for="f-owner">Responsible person</label>${ownerSelect('f-owner', d.ownerId, 'Unassigned')}</div>
+          <div class="field"><label for="f-owner2">Second person (optional)</label>${ownerSelect('f-owner2', d.owner2Id, 'None')}</div>
+        </div>
+        <p class="hint" style="margin-top:-8px">${S.people.length ? 'Reminder emails go to everyone responsible.' : 'Add people on the People tab, then assign them here.'}</p>`
+      : `<div class="field"><label for="f-owner">Responsible person</label>${ownerSelect('f-owner', d.ownerId, 'Unassigned')}
+          <p class="hint">${S.people.length ? 'Reminder emails go to this person.' : 'Add people on the People tab, then assign them here.'}</p></div>`}
     <div class="field"><label for="f-section">Section</label><select id="f-section"${dis}>${SECTIONS.map(s => `<option value="${s.key}"${d.section === s.key ? ' selected' : ''}>${s.n}. ${esc(s.title)}</option>`).join('')}</select></div>
     <div class="field"><label for="f-comment">Comment</label><textarea id="f-comment" rows="4" maxlength="4000" placeholder="Notes, findings, actions agreed, supplier or broker contacts"${dis}>${esc(d.comment)}</textarea></div>
     ${S.openId && !ro ? `<div class="complete-box"><div class="txt"><strong>Mark as completed</strong><span>Sets status to Green, records the date and rolls the next due date forward.</span></div><input type="date" id="f-done" value="${today()}" aria-label="Date completed"><button type="button" class="btn" data-act="complete">Mark completed</button></div>` : ''}
@@ -588,7 +607,7 @@ function describe(prev, next){
   if (prev.status !== next.status) out.push(`Status ${STATUS[prev.status]} → ${STATUS[next.status]}`);
   if (prev.lastCompleted !== next.lastCompleted) out.push(`Last completed ${fmt(next.lastCompleted) || 'cleared'}`);
   if (prev.nextDue !== next.nextDue) out.push(`Next due ${fmt(next.nextDue) || 'cleared'}`);
-  if (prev.ownerId !== next.ownerId) out.push(`Responsible: ${(personById(next.ownerId) || {}).name || 'unassigned'}`);
+  if (prev.ownerId !== next.ownerId || (prev.owner2Id || '') !== (next.owner2Id || '')) out.push(`Responsible: ${ownerName(next) || 'unassigned'}`);
   if (prev.frequency !== next.frequency) out.push(`Repeats ${FREQ[next.frequency].toLowerCase()}`);
   if (prev.section !== next.section) out.push(`Moved to ${SEC[next.section].title}`);
   if (prev.title !== next.title) out.push('Renamed');
@@ -749,7 +768,7 @@ async function removeMember(email){
 function csvCell(v){ v = String(v ?? ''); if (/^[=+\-@\t\r]/.test(v)) v = "'" + v; return /[",\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }
 function exportCSV(){
   const head = ['Section','Check',"What's required",'Status','Last completed','Next due','Due state','Repeats','Responsible','Responsible email','Reminder (days before)','Comment','Documents'];
-  const rows = SECTIONS.flatMap(s => checksIn(s.key).map(c => { const p = personById(c.ownerId); return [`${s.n}. ${s.title}`, c.title, c.detail, STATUS[c.status], c.lastCompleted, c.nextDue, c.nextDue ? rel(c.nextDue) : 'No due date', FREQ[c.frequency], p ? p.name : '', p ? p.email : '', c.remindDays, c.comment, c.docs.map(d => d.name).join('; ')]; }));
+  const rows = SECTIONS.flatMap(s => checksIn(s.key).map(c => { const ps = ownersOf(c); return [`${s.n}. ${s.title}`, c.title, c.detail, STATUS[c.status], c.lastCompleted, c.nextDue, c.nextDue ? rel(c.nextDue) : 'No due date', FREQ[c.frequency], ps.map(p => p.name).join(' & '), ps.map(p => p.email).filter(Boolean).join('; '), c.remindDays, c.comment, c.docs.map(d => d.name).join('; ')]; }));
   const csv = '﻿' + [head, ...rows].map(r => r.map(csvCell).join(',')).join('\r\n');
   const url = URL.createObjectURL(new Blob([csv], {type:'text/csv;charset=utf-8'}));
   const a = document.createElement('a'); a.href = url; a.download = `governance-register-${today()}.csv`; document.body.appendChild(a); a.click(); a.remove();
